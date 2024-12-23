@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>计时器</title>
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDS1_UxYp8rOcbkqdSKnpgGtMXfdOw-LIo",
+            authDomain: "xiaofeiyang-tongbu.firebaseapp.com",
+            databaseURL: "https://xiaofeiyang-tongbu-default-rtdb.firebaseio.com",
+            projectId: "xiaofeiyang-tongbu",
+            storageBucket: "xiaofeiyang-tongbu.firebasestorage.app",
+            messagingSenderId: "108945962115",
+            appId: "1:108945962115:web:5bfbcc81dd0114ccba17b6"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        // 将Firebase函数暴露给全局
+        window.sendData = async function() {
+            const shareButton = document.querySelector('.send-btn');
+            shareButton.disabled = true;  // 禁用按钮
+            shareButton.style.opacity = '0.6';  // 添加视觉反馈
+            
+            let inputCode = document.getElementById('syncCode').value;
+            
+            // 如果没有输入同步码，自动生成一个（10-999之间）
+            if (!inputCode) {
+                inputCode = Math.floor(Math.random() * 990) + 10;  // 生成10-999之间的随机数
+                document.getElementById('syncCode').value = inputCode;
+            }
+
+            try {
+                console.log('开始收集数据...');
+                const data = [];
+                document.querySelectorAll('.timer-row').forEach(row => {
+                    const timerData = {
+                        label: row.querySelector('.label-input').value,
+                        display: row.querySelector('.display-input').value,
+                        edit: row.querySelector('.edit-input').value,
+                        isRunning: row.hasAttribute('data-end-time'),
+                        endTime: row.getAttribute('data-end-time')
+                    };
+                    data.push(timerData);
+                    console.log('收集计时器数据:', timerData);
+                });
+
+                console.log('准备发送数据到Firebase，同步码:', inputCode);
+                console.log('完整数据:', data);
+
+                const syncRef = ref(database, 'syncs/' + inputCode);
+                await set(syncRef, data);
+                console.log('数据成功保存到Firebase!');
+
+                // 验证数据是否成功保存
+                const verifySnapshot = await get(syncRef);
+                if (verifySnapshot.exists()) {
+                    console.log('数据验证成功，已保存的数据:', verifySnapshot.val());
+                    alert('分享成功，对方输入同步码：' + inputCode + ' 即可同步');
+                } else {
+                    throw new Error('数据保存验证失败');
+                }
+            } catch (error) {
+                console.error('保存失败:', error);
+                alert('保存失败，错误信息: ' + error.message);
+            } finally {
+                // 无论成功还是失败，都重新启用按钮
+                shareButton.disabled = false;
+                shareButton.style.opacity = '1';
+            }
+        };
+
+        window.receiveData = async function() {
+            const inputCode = document.getElementById('syncCode').value;
+            if (!inputCode) {
+                alert('请输入同步码');
+                return;
+            }
+
+            try {
+                console.log('开始接收数据，同步码:', inputCode);
+                const syncRef = ref(database, 'syncs/' + inputCode);
+                
+                console.log('正在从Firebase读取数据...');
+                const snapshot = await get(syncRef);
+
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    console.log('成功获取数据:', data);
+                    
+                    // 清除所有现有计时器
+                    document.querySelectorAll('.timer-row').forEach(row => {
+                        const timerId = row.getAttribute('data-timer-id');
+                        if (timerId) {
+                            clearInterval(parseInt(timerId));
+                        }
+                    });
+
+                    const container = document.getElementById('timer-container');
+                    container.innerHTML = '';
+                    
+                    console.log('开始创建计时器...');
+                    data.forEach(timer => {
+                        console.log('创建计时器:', timer.label);
+                        addNewTimer(timer.label, {
+                            display: timer.display,
+                            edit: timer.edit,
+                            isRunning: timer.isRunning,
+                            endTime: timer.endTime
+                        });
+                    });
+                    
+                    console.log('所有计时器创建完成');
+                    alert('数据同步成功！');
+
+                    // 设置实时监听
+                    console.log('设置实时数据监听...');
+                    onValue(syncRef, (snapshot) => {
+                        if (snapshot.exists()) {
+                            const newData = snapshot.val();
+                            console.log('收到实时更新:', newData);
+                            
+                            // 清除所有现有计时器
+                            document.querySelectorAll('.timer-row').forEach(row => {
+                                const timerId = row.getAttribute('data-timer-id');
+                                if (timerId) {
+                                    clearInterval(parseInt(timerId));
+                                }
+                            });
+
+                            container.innerHTML = '';
+                            
+                            newData.forEach(timer => {
+                                addNewTimer(timer.label, {
+                                    display: timer.display,
+                                    edit: timer.edit,
+                                    isRunning: timer.isRunning,
+                                    endTime: timer.endTime
+                                });
+                            });
+                        }
+                    });
+                } else {
+                    console.log('未找到数据，同步码:', inputCode);
+                    alert('未找到该同步码的数据，请确认同步码是否正确');
+                }
+            } catch (error) {
+                console.error('同步失败:', error);
+                alert('同步失败，错误信息: ' + error.message);
+            }
+        };
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            padding: 20px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .container {
+            background-color: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .timer-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .label-input {
+            width: 100px;
+            padding: 3px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .display-input {
+            width: 80px;
+            padding: 3px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #f8f8f8;
+            font-size: 16px;
+        }
+
+        .edit-input {
+            width: 40px;
+            padding: 3px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .btn {
+            padding: 3px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .reset-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .online-count {
+            margin: 10px 0;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .contact {
+            margin-top: 20px;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .display-input.warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .display-input.finished {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .sync-box {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .sync-input {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .sync-btn {
+            padding: 5px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+            font-size: 16px;
+        }
+
+        .send-btn {
+            background-color: #4CAF50;
+        }
+
+        .receive-btn {
+            background-color: #2196F3;
+        }
+
+        /* 隐藏数字输入框的上下调节按钮 */
+        .edit-input::-webkit-inner-spin-button,
+        .edit-input::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        .edit-input {
+            -moz-appearance: textfield; /* Firefox */
+            appearance: textfield; /* 标准属性 */
+        }
+
+        .advance-notice {
+            margin: 10px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #advanceMinutes {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+        
+        #advanceMinutes::-webkit-inner-spin-button,
+        #advanceMinutes::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        #timer-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+    </style>
+    <audio id="notificationSound">
+        <!-- 系统提示音 -->
+        <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+        <!-- 备用提示音 -->
+        <source src="https://www.soundjay.com/button/beep-07.wav" type="audio/wav">
+    </audio>
+    <audio id="bellSound">
+        <source src="https://example.com/sounds/bell.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="chimeSound">
+        <source src="https://example.com/sounds/chime.mp3" type="audio/mpeg">
+    </audio>
+</head>
+<body>
+    <div class="sync-box">
+        <input type="number" class="sync-input" id="syncCode" placeholder="同步码">
+        <button class="sync-btn send-btn" onclick="sendData()">分享</button>
+        <button class="sync-btn receive-btn" onclick="receiveData()">接收</button>
+    </div>
+    <div class="advance-notice">
+        <input type="number" id="advanceMinutes" min="0" class="sync-input" placeholder="提前提醒分钟">
+    </div>
+    <div class="title">小肥羊计时器团队语音提示版</div>
+    <div class="online-count">在线人数：<span id="onlineCount">1</span></div>
+    <div class="container">
+        <div id="timer-container">
+            <!-- 计时器将通过 JavaScript 动态添加 -->
+        </div>
+    </div>
+    <div class="contact">联系作者：QQ 271236006</div>
+
+    <script>
+        // 获计时器数据
+        window.getTimerData = function() {
+            const data = [];
+            document.querySelectorAll('.timer-row').forEach(row => {
+                data.push({
+                    label: row.querySelector('.label-input').value,
+                    display: row.querySelector('.display-input').value,
+                    edit: row.querySelector('.edit-input').value,
+                    isRunning: row.hasAttribute('data-end-time'),
+                    endTime: row.getAttribute('data-end-time')
+                });
+            });
+            return data;
+        };
+
+        // 应用计时器数据
+        window.applyTimerData = function(data) {
+            const container = document.getElementById('timer-container');
+            const currentTimers = {};
+            
+            // 保存当前正在运行的计时器状态
+            document.querySelectorAll('.timer-row').forEach(row => {
+                const label = row.querySelector('.label-input').value;
+                const isRunning = row.hasAttribute('data-end-time');
+                if (isRunning) {
+                    currentTimers[label] = {
+                        endTime: row.getAttribute('data-end-time')
+                    };
+                }
+            });
+            
+            container.innerHTML = '';
+            
+            data.forEach(timer => {
+                // 如果计时器正在本地运行，保持其状态
+                if (currentTimers[timer.label] && currentTimers[timer.label].endTime) {
+                    timer.isRunning = true;
+                    timer.endTime = currentTimers[timer.label].endTime;
+                }
+                
+                addNewTimer(timer.label, {
+                    display: timer.display,
+                    edit: timer.edit,
+                    isRunning: timer.isRunning,
+                    endTime: timer.endTime
+                });
+            });
+        };
+
+        // 预设的标签名称
+        const timerLabels = [
+            "山大王",
+            "矿洞魔首",
+            "嗜血熊",
+            "噬心修罗",
+            "炼狱冥皇",
+            "神风护法",
+            "惊云护法",
+            "修罗将军",
+            "皇城督统",
+            "太古之骸",
+            "叛军总帅",
+            "修罗天魔王",
+            "太阴真君",
+            "黑暗王子",
+            "龙王",
+            "终极",
+            "西北天狼"
+        ];
+
+        // 修改保存状态函数
+        function saveStates() {
+            try {
+                const states = {};
+                document.querySelectorAll('.timer-row').forEach(row => {
+                    const label = row.querySelector('.label-input').value;
+                    const displayInput = row.querySelector('.display-input');
+                    const editInput = row.querySelector('.edit-input');
+                    const isRunning = row.hasAttribute('data-end-time');
+                    const endTime = row.getAttribute('data-end-time');
+                    const timerId = row.getAttribute('data-timer-id');
+
+                    states[label] = {
+                        display: displayInput.value,
+                        edit: editInput.value,
+                        isRunning,
+                        endTime,
+                        timerId
+                    };
+                });
+
+                // 保存到localStorage
+                localStorage.setItem('timerStates', JSON.stringify(states));
+                console.log('本地状态已保存:', states);
+
+                // 如果有同步码，同时更新Firebase
+                const syncCode = document.getElementById('syncCode').value;
+                if (syncCode && window.firebaseInitialized) {
+                    window.saveToFirebase(syncCode, window.getTimerData()).catch(error => {
+                        console.error("保存到Firebase失败:", error);
+                    });
+                }
+            } catch (error) {
+                console.error("保存状态失败:", error);
+            }
+        }
+
+        // 页面载时自动创建计时器
+        window.onload = function() {
+            try {
+                console.log('正在加载保存的状态...');
+                const savedStates = JSON.parse(localStorage.getItem('timerStates') || '{}');
+                console.log('已加载的状态:', savedStates);
+                
+                timerLabels.forEach((label, index) => {
+                    const state = savedStates[label] || {};
+                    addNewTimer(label, state);
+                });
+
+                // 移除随机同步码生成
+                document.getElementById('syncCode').value = '';
+            } catch (error) {
+                console.error("加载保存的状态失败:", error);
+                // 如果加载失败，至少创建基本的计时器
+                timerLabels.forEach((label, index) => {
+                    addNewTimer(label, {});
+                });
+            }
+        };
+
+        // 定期保存状态（每秒）
+        setInterval(saveStates, 1000);
+
+        // 页面关闭时保存状态
+        window.addEventListener('beforeunload', function() {
+            saveStates();
+        });
+
+        // 添加新计时器
+        function addNewTimer(label, state = {}) {
+            const container = document.getElementById('timer-container');
+            
+            const timerRow = document.createElement('div');
+            timerRow.className = 'timer-row';
+            
+            // 设置默认时间
+            let defaultTime = '0';
+            const index = timerLabels.indexOf(label);
+            if (index >= 0 && index < 8) {
+                defaultTime = '30';  // 1-8号计时器默认30分钟
+            } else if (index >= 8 && index < 13) {
+                defaultTime = '60';  // 9-13号计时器默认60分钟
+            } else if (index >= 13) {
+                defaultTime = '120'; // 14-17号计时器默认120分钟
+            }
+            
+            // 如果计时器正在运行，计算剩余时间
+            let displayValue = '00:00:00';
+            let displayClass = '';
+            
+            if (state.isRunning && state.endTime) {
+                const now = Date.now();
+                const remainingTime = Math.max(0, Math.floor((parseInt(state.endTime) - now) / 1000));
+                if (remainingTime > 0) {
+                    displayValue = formatTime(remainingTime);
+                    if (remainingTime < 60) {
+                        displayClass = 'warning';
+                    }
+                    timerRow.setAttribute('data-end-time', state.endTime);
+                } else {
+                    displayValue = '已刷新';
+                    displayClass = 'finished';
+                }
+            }
+            
+            timerRow.innerHTML = `
+                <input type="text" class="label-input" value="${label}">
+                <input type="text" class="display-input ${displayClass}" value="${displayValue}" readonly>
+                <button class="btn save-btn" onclick="startTimer(this)">开始</button>
+                <button class="btn reset-btn" onclick="resetTimer(this)">重置</button>
+                <input type="number" class="edit-input" min="0" value="${state.edit || defaultTime}" title="请输入BOSS刷新周期，单位是分钟">
+            `;
+            
+            container.appendChild(timerRow);
+
+            // 如果计时器正在运行，立即启动它
+            if (state.isRunning && state.endTime) {
+                const now = Date.now();
+                const remainingTime = Math.max(0, Math.floor((parseInt(state.endTime) - now) / 1000));
+                if (remainingTime > 0) {
+                    const button = timerRow.querySelector('.save-btn');
+                    startTimer(button, remainingTime);
+                }
+            }
+        }
+
+        function startTimer(button, initialSeconds = null) {
+            const row = button.closest('.timer-row');
+            const displayInput = row.querySelector('.display-input');
+            const editInput = row.querySelector('.edit-input');
+            
+            let seconds;
+            let endTime;
+            
+            if (initialSeconds !== null) {
+                seconds = initialSeconds;
+                endTime = Date.now() + seconds * 1000;
+            } else {
+                const minutes = parseInt(editInput.value);
+                seconds = minutes * 60;
+                endTime = Date.now() + seconds * 1000;
+            }
+            
+            row.setAttribute('data-end-time', endTime.toString());
+            displayInput.value = formatTime(seconds);
+            
+            const timerId = setInterval(() => {
+                const now = Date.now();
+                const remaining = Math.max(0, Math.floor((parseInt(row.getAttribute('data-end-time')) - now) / 1000));
+                
+                // 检查是否需要提前提醒，只播放提示音，不显示弹窗
+                const advanceMinutes = parseInt(document.getElementById('advanceMinutes').value) || 0;
+                if (advanceMinutes > 0 && remaining === advanceMinutes * 60) {
+                    document.getElementById('notificationSound').play();
+                }
+                
+                if (remaining <= 0) {
+                    clearInterval(timerId);
+                    displayInput.value = "已刷新";
+                    displayInput.classList.add('finished');
+                    row.removeAttribute('data-end-time');
+                    row.removeAttribute('data-timer-id');
+                    saveStates();
+                    return;
+                }
+                
+                displayInput.value = formatTime(remaining);
+                if (remaining < 60) {
+                    displayInput.classList.add('warning');
+                } else {
+                    displayInput.classList.remove('warning');
+                }
+                saveStates();
+            }, 1000);
+            
+            row.setAttribute('data-timer-id', timerId.toString());
+            saveStates();
+        }
+
+        function resetTimer(button) {
+            const row = button.closest('.timer-row');
+            const displayInput = row.querySelector('.display-input');
+            const timerId = row.getAttribute('data-timer-id');
+            
+            if (timerId) {
+                clearInterval(parseInt(timerId));
+            }
+            
+            displayInput.value = "00:00:00";
+            displayInput.classList.remove('warning', 'finished');
+            row.removeAttribute('data-end-time');
+            row.removeAttribute('data-timer-id');
+            saveStates();
+        }
+
+        // 格式化时间显示
+        function formatTime(seconds) {
+            const hrs = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        // 添加计算虚假在线人数的函数
+        function updateFakeOnlineCount(realCount) {
+            const now = new Date();
+            const minutes = now.getMinutes();
+            let fakeCount = realCount + minutes;  // 真实人数 + 当前分钟数
+            
+            // 确保最低在线人数不少于10人
+            fakeCount = Math.max(10, fakeCount);
+            
+            document.getElementById('onlineCount').textContent = fakeCount;
+        }
+
+        // 每分钟更新一次在线人数
+        setInterval(() => {
+            // 这里的1是真实在线人数，你可以根据需要修改
+            updateFakeOnlineCount(1);
+        }, 60000); // 每分钟更新一次
+
+        // 页面加载时立即更新一次
+        window.addEventListener('load', () => {
+            updateFakeOnlineCount(1);
+        });
+    </script>
+</body>
+</html> 
